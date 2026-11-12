@@ -2,6 +2,10 @@
 
 Generates editor activity in VS Code on timers.
 
+If the active tab is empty, is not a text file, or nothing is open, it opens a
+file from the project folder first, so the timers always have something to act
+on. Every action is written to **Output > Auto Activity** with a timestamp.
+
 Every 10-15 seconds:
 
 - selects a whole word near the cursor, then
