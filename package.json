@@ -1,0 +1,109 @@
+{
+  "name": "auto-activity",
+  "displayName": "Auto Activity",
+  "description": "Generates cursor movement, word selection, scrolling, searching and file opening on a timer. Never creates, saves or modifies files.",
+  "version": "0.4.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "autoActivity.start",
+        "title": "Auto Activity: Start"
+      },
+      {
+        "command": "autoActivity.stop",
+        "title": "Auto Activity: Stop"
+      },
+      {
+        "command": "autoActivity.toggle",
+        "title": "Auto Activity: Toggle"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "autoActivity.toggle",
+        "key": "ctrl+alt+shift+a"
+      }
+    ],
+    "configuration": {
+      "title": "Auto Activity",
+      "properties": {
+        "autoActivity.minSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Shortest wait between two of the other actions (cursor move, search, open/close file), in seconds."
+        },
+        "autoActivity.maxSeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Longest wait between two of the other actions (cursor move, search, open/close file), in seconds."
+        },
+        "autoActivity.selectScrollMinSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Shortest wait between two select-and-scroll steps, in seconds."
+        },
+        "autoActivity.selectScrollMaxSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "Longest wait between two select-and-scroll steps, in seconds."
+        },
+        "autoActivity.moveCursor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Move the cursor to a nearby line in the active editor."
+        },
+        "autoActivity.scroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scroll the active editor as part of the select-and-scroll step."
+        },
+        "autoActivity.selectWord": {
+          "type": "boolean",
+          "default": true,
+          "description": "Select a whole word near the cursor as part of the select-and-scroll step."
+        },
+        "autoActivity.search": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the Find box with a word from the file, step through a few matches, then close it. Never replaces text."
+        },
+        "autoActivity.switchTabs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Occasionally switch to the next open editor tab."
+        },
+        "autoActivity.openCloseFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open files from the project folder shown in the Explorer, and close them again later. Only tabs opened by this extension are closed."
+        },
+        "autoActivity.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the icon-only toggle button in the status bar."
+        },
+        "autoActivity.startOnLaunch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start generating activity as soon as VS Code opens."
+        }
+      }
+    }
+  }
+}
