@@ -27,7 +27,8 @@ looks at files that already exist.
 ## Use
 
 Click the icon in the status bar (bottom right) to start, and click again to
-stop. `Ctrl+Alt+Shift+A` toggles it too. The same actions are in the Command
+stop. Shortcuts: `Ctrl+Alt+Shift+A` toggles, `Ctrl+Alt+Shift+S` starts and
+`Ctrl+Alt+Shift+X` stops. The same actions are in the Command
 Palette: `Auto Activity: Start`, `Stop` and `Toggle`.
 
 ## Settings

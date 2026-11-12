@@ -2,7 +2,7 @@
   "name": "auto-activity",
   "displayName": "Auto Activity",
   "description": "Generates cursor movement, word selection, scrolling, searching and file opening on a timer. Never creates, saves or modifies files.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -34,6 +34,14 @@
       {
         "command": "autoActivity.toggle",
         "key": "ctrl+alt+shift+a"
+      },
+      {
+        "command": "autoActivity.start",
+        "key": "ctrl+alt+shift+s"
+      },
+      {
+        "command": "autoActivity.stop",
+        "key": "ctrl+alt+shift+x"
       }
     ],
     "configuration": {
