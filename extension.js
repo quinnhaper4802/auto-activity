@@ -2,10 +2,12 @@
 //
 // Safety rule for the whole file: nothing here ever saves, creates or edits a
 // document. Every action only looks at files: moving the cursor, selecting,
-// scrolling, finding, and opening or closing tabs.
+// scrolling, finding, and opening or closing tabs. The mouse feature only moves
+// the pointer; it never clicks and never presses a key.
 
 const vscode = require('vscode');
 const path = require('path');
+const { spawn } = require('child_process');
 
 const ACTION_TIMEOUT_MS = 20000; // an action that hangs is abandoned after this long
 
@@ -332,6 +334,279 @@ async function closeAllOfOurs() {
   while (openedByUs.length) await closeOneOfOurs();
 }
 
+// --- mouse -------------------------------------------------------------------
+// Moves the real mouse pointer along curved, eased paths for a few seconds at
+// a time. Windows only: a hidden PowerShell process calls user32.dll, so no
+// native node module is needed. It runs on its own timer, beside the editor
+// actions, and only ever moves the pointer.
+
+const PS_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential)]
+public struct WPoint { public int X; public int Y; }
+public static class W {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out WPoint p);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
+}
+'@
+[Console]::Out.WriteLine('READY')
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($line -eq $null) { break }
+  $p = $line.Split(' ')
+  switch ($p[0]) {
+    'M' { [void][W]::SetCursorPos([int]$p[1], [int]$p[2]) }
+    'P' {
+      $pt = New-Object WPoint
+      [void][W]::GetCursorPos([ref]$pt)
+      [Console]::Out.WriteLine("$($pt.X) $($pt.Y)")
+    }
+    'S' { [Console]::Out.WriteLine("$([W]::GetSystemMetrics(0)) $([W]::GetSystemMetrics(1))") }
+  }
+}
+`;
+
+const BRIDGE_START_TIMEOUT_MS = 20000;
+const MOUSE_MARGIN = 60; // keep the pointer this far from the screen edges
+const USER_MOVED_PX = 4; // pointer further than this from where we left it: the user moved it
+
+let bridge; // running PowerShell helper, if any
+let bridgeStarting; // promise while the helper is starting
+let mouseTimer;
+let mouseUnavailable = false; // helper failed to start; do not retry until the next start
+let screenSize = { w: 1920, h: 1080 };
+
+const rand = (min, max) => Math.random() * (max - min) + min;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+class MouseBridge {
+  constructor(proc) {
+    this.proc = proc;
+    this.buf = '';
+    this.waiters = []; // one resolver per expected output line, oldest first
+    proc.stdout.setEncoding('utf8');
+    proc.stdout.on('data', (d) => {
+      this.buf += d;
+      let i;
+      while ((i = this.buf.indexOf('\n')) >= 0) {
+        const line = this.buf.slice(0, i).trim();
+        this.buf = this.buf.slice(i + 1);
+        const waiter = this.waiters.shift();
+        if (waiter) waiter(line);
+      }
+    });
+    const fail = () => {
+      this.waiters.splice(0).forEach((w) => w(''));
+      if (bridge === this) bridge = undefined;
+    };
+    proc.on('exit', fail);
+    proc.on('error', fail);
+    proc.stdin.on('error', () => {}); // helper already gone; 'exit' handles it
+    proc.stderr.on('data', (d) => log(`mouse helper: ${String(d).trim()}`));
+  }
+
+  static async create() {
+    const encoded = Buffer.from(PS_SCRIPT, 'utf16le').toString('base64');
+    const proc = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { windowsHide: true }
+    );
+    const b = new MouseBridge(proc);
+    const ready = await Promise.race([
+      new Promise((resolve) => b.waiters.push(resolve)),
+      sleep(BRIDGE_START_TIMEOUT_MS).then(() => 'TIMEOUT'),
+    ]);
+    if (ready !== 'READY') {
+      b.dispose();
+      throw new Error(`PowerShell helper did not start (got: ${ready || 'nothing'})`);
+    }
+    return b;
+  }
+
+  send(line) {
+    if (this.proc.stdin.writable) this.proc.stdin.write(line + '\n');
+  }
+
+  ask(line) {
+    return new Promise((resolve) => {
+      if (!this.proc.stdin.writable) return resolve('');
+      this.waiters.push(resolve);
+      this.send(line);
+    });
+  }
+
+  async position() {
+    const [x, y] = (await this.ask('P')).split(' ').map(Number);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
+  }
+
+  dispose() {
+    try { this.proc.stdin.end(); } catch (err) { /* already closed */ }
+    try { this.proc.kill(); } catch (err) { /* already gone */ }
+  }
+}
+
+// Starts the helper on first use. Returns undefined if it cannot be started.
+async function getBridge(id) {
+  if (bridge) return bridge;
+  if (mouseUnavailable) return undefined;
+  if (!bridgeStarting) {
+    bridgeStarting = (async () => {
+      try {
+        const b = await MouseBridge.create();
+        const [w, h] = (await b.ask('S')).split(' ').map(Number);
+        if (w > 0 && h > 0) screenSize = { w, h };
+        return b;
+      } catch (err) {
+        mouseUnavailable = true;
+        log(`mouse: helper failed - ${err && err.message ? err.message : err}`);
+        vscode.window.showWarningMessage(
+          'Auto Activity: could not start the mouse helper (PowerShell). Mouse movement is off; everything else keeps running.'
+        );
+        return undefined;
+      } finally {
+        bridgeStarting = undefined;
+      }
+    })();
+  }
+  const b = await bridgeStarting;
+  if (b && id !== runId) {
+    // stopped while the helper was starting
+    b.dispose();
+    return undefined;
+  }
+  if (b) bridge = b;
+  return b;
+}
+
+function disposeBridge() {
+  if (bridge) bridge.dispose();
+  bridge = undefined;
+}
+
+function mouseAllowed() {
+  const c = cfg();
+  if (!c.get('moveMouse', true)) return false;
+  return !c.get('mousePauseWhenUnfocused', true) || vscode.window.state.focused;
+}
+
+function bezier(p0, p1, p2, p3, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+  };
+}
+
+// Moves the pointer from one point to another along a curved, eased path.
+// Returns the last point actually sent, which is `to` unless it was cut short.
+async function glide(b, from, to, canContinue, jitter = true) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 2) return from;
+
+  // duration grows with distance, plus a short settle time
+  const duration = clamp((dist / rand(450, 900)) * 1000 + rand(150, 400), 250, 3000);
+  const steps = Math.max(20, Math.round(duration / 12));
+
+  // curved path: control points pushed sideways from the straight line
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const bend = rand(-0.2, 0.2) * dist;
+  const c1 = { x: from.x + dx * 0.3 + nx * bend, y: from.y + dy * 0.3 + ny * bend };
+  const c2 = {
+    x: from.x + dx * 0.7 + nx * bend * rand(0.3, 1),
+    y: from.y + dy * 0.7 + ny * bend * rand(0.3, 1),
+  };
+
+  let last = from;
+  for (let i = 1; i <= steps; i++) {
+    if (!canContinue()) break;
+    const p = bezier(from, c1, c2, to, ease(i / steps));
+    const j = jitter && i < steps ? 1 : 0;
+    last = {
+      x: clamp(Math.round(p.x + rand(-j, j)), 0, screenSize.w - 1),
+      y: clamp(Math.round(p.y + rand(-j, j)), 0, screenSize.h - 1),
+    };
+    b.send(`M ${last.x} ${last.y}`);
+    await sleep((duration / steps) * rand(0.8, 1.25));
+  }
+  return last;
+}
+
+// One wandering session: a series of glides to nearby points for 10-15
+// seconds. Stops at once if the user moves the mouse themselves.
+async function moveMouse(id) {
+  if (!mouseAllowed()) return 'skipped, window not focused';
+  const b = await getBridge(id);
+  if (!b) return 'helper not available';
+  const canContinue = () => running && id === runId && bridge === b && mouseAllowed();
+
+  const { w, h } = screenSize;
+  const endAt = Date.now() + secondsRange('mouseSessionMinSeconds', 'mouseSessionMaxSeconds', 10, 15);
+  let pos = await b.position();
+  let moves = 0;
+
+  while (pos && canContinue() && Date.now() < endAt) {
+    const target = {
+      x: clamp(pos.x + randInt(-500, 500), MOUSE_MARGIN, w - MOUSE_MARGIN),
+      y: clamp(pos.y + randInt(-350, 350), MOUSE_MARGIN, h - MOUSE_MARGIN),
+    };
+
+    // now and then overshoot a little, then correct
+    if (Math.random() < 0.25) {
+      const over = {
+        x: clamp(target.x + randInt(-25, 25), 0, w - 1),
+        y: clamp(target.y + randInt(-25, 25), 0, h - 1),
+      };
+      pos = await glide(b, pos, over, canContinue);
+      await sleep(rand(60, 180));
+      pos = await glide(b, pos, target, canContinue, false);
+    } else {
+      pos = await glide(b, pos, target, canContinue);
+    }
+    moves++;
+    await sleep(rand(50, 400));
+
+    const actual = await b.position();
+    if (!actual) break;
+    if (Math.hypot(actual.x - pos.x, actual.y - pos.y) > USER_MOVED_PX) {
+      return `${moves} moves, then stopped because you moved the mouse`;
+    }
+    pos = actual;
+  }
+  return `${moves} moves`;
+}
+
+// Timer 3: a mouse session, a pause, the next session. Unlike the other two
+// timers this one re-arms after the session ends, since a session is long.
+function armMouse(delayMs) {
+  if (!running) return;
+  const id = runId;
+  const delay = delayMs !== undefined
+    ? delayMs
+    : secondsRange('mousePauseMinSeconds', 'mousePauseMaxSeconds', 5, 20);
+  mouseTimer = setTimeout(async () => {
+    if (cfg().get('moveMouse', true)) {
+      try {
+        const result = await moveMouse(id);
+        if (id === runId) log(`mouse: ${result}`);
+      } catch (err) {
+        log(`mouse: error - ${err && err.message ? err.message : err}`);
+      }
+    }
+    if (id === runId) armMouse();
+  }, delay);
+}
+
 // --- commands --------------------------------------------------------------
 
 function start() {
@@ -346,6 +621,9 @@ function start() {
   enqueue('select+scroll', selectAndScroll); // first step right away, then on the timer
   armSelectScroll();
   armRandom();
+  mouseUnavailable = false;
+  if (process.platform === 'win32') armMouse(randInt(1000, 3000));
+  else if (cfg().get('moveMouse', true)) log('mouse: only supported on Windows, skipped');
 }
 
 async function stop() {
@@ -354,8 +632,11 @@ async function stop() {
   runId++;
   clearTimeout(timer);
   clearTimeout(selectScrollTimer);
+  clearTimeout(mouseTimer);
   timer = undefined;
   selectScrollTimer = undefined;
+  mouseTimer = undefined;
+  disposeBridge();
   render();
   log('stopped');
   try {

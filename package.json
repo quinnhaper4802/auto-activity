@@ -1,8 +1,8 @@
 {
   "name": "auto-activity",
   "displayName": "Auto Activity",
-  "description": "Generates cursor movement, word selection, scrolling, searching and file opening on a timer. Never creates, saves or modifies files.",
-  "version": "0.5.1",
+  "description": "Generates cursor movement, word selection, scrolling, searching, file opening and mouse movement on a timer. Never creates, saves or modifies files.",
+  "version": "0.6.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -100,6 +100,40 @@
           "type": "boolean",
           "default": true,
           "description": "Open files from the project folder shown in the Explorer, and close them again later. Only tabs opened by this extension are closed."
+        },
+        "autoActivity.moveMouse": {
+          "type": "boolean",
+          "default": true,
+          "description": "Move the real mouse pointer along curved paths in short sessions (Windows only). Only moves the pointer; never clicks. Stops a session as soon as you move the mouse yourself."
+        },
+        "autoActivity.mouseSessionMinSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Shortest mouse-movement session, in seconds."
+        },
+        "autoActivity.mouseSessionMaxSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "Longest mouse-movement session, in seconds."
+        },
+        "autoActivity.mousePauseMinSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Shortest pause between two mouse-movement sessions, in seconds."
+        },
+        "autoActivity.mousePauseMaxSeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Longest pause between two mouse-movement sessions, in seconds."
+        },
+        "autoActivity.mousePauseWhenUnfocused": {
+          "type": "boolean",
+          "default": true,
+          "description": "Do not move the mouse while the VS Code window is not focused."
         },
         "autoActivity.showStatusBar": {
           "type": "boolean",

@@ -19,6 +19,18 @@ Every 5-20 seconds, one of these at random:
   opened earlier (only tabs it opened itself, never one with unsaved changes)
 - optionally switches to the next tab (off by default)
 
+Mouse (Windows only), in sessions of 10-15 seconds with a 5-20 second pause
+between them:
+
+- moves the real mouse pointer to nearby points along curved, eased paths,
+  sometimes overshooting a little and correcting
+- only moves the pointer: it never clicks and never presses a key
+- stops the session as soon as you move the mouse yourself
+- by default does nothing while the VS Code window is not focused
+
+It uses a hidden PowerShell process that calls `user32.dll`, so there is
+nothing extra to install. The process ends when you stop Auto Activity.
+
 ## It never creates, saves or edits
 
 There is no save, create or edit call anywhere in the code. Every action only
@@ -45,6 +57,12 @@ Palette: `Auto Activity: Start`, `Stop` and `Toggle`.
 | `autoActivity.search` | true | Search with the Find box |
 | `autoActivity.openCloseFiles` | true | Open and close project files |
 | `autoActivity.switchTabs` | false | Switch to the next tab |
+| `autoActivity.moveMouse` | true | Move the mouse pointer (Windows only) |
+| `autoActivity.mouseSessionMinSeconds` | 10 | Shortest mouse session |
+| `autoActivity.mouseSessionMaxSeconds` | 15 | Longest mouse session |
+| `autoActivity.mousePauseMinSeconds` | 5 | Shortest pause between mouse sessions |
+| `autoActivity.mousePauseMaxSeconds` | 20 | Longest pause between mouse sessions |
+| `autoActivity.mousePauseWhenUnfocused` | true | No mouse movement while VS Code is not focused |
 | `autoActivity.showStatusBar` | true | Show the status bar icon |
 | `autoActivity.startOnLaunch` | false | Start when VS Code opens |
 
